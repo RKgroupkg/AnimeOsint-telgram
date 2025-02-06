@@ -194,15 +194,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await send_help_message(message, chat.id)
         return
     
-    # Show searching reaction
-    await context.bot.send_chat_action(chat.id, "typing")
-    reaction = [{"type": "emoji", "emoji": "🔍"}]
-    emoji = reaction[0]["emoji"]  # Extract the emoji from the dictionary
-    await context.bot.set_message_reaction(
-     chat_id=chat.id,
-     message_id=message.message_id,
-     reaction=[{"type": "emoji", "emoji": emoji}]  # Pass the emoji string
- )
+    message = await context.bot.send_animation(
+    chat_id=chat.id,
+    animation="https://giffiles.alphacoders.com/121/12113.gif"
+    )
     
     result = await submit_search(image_url, opts)
     
@@ -213,6 +208,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 message_id=message.message_id,
                 reaction=[{"type": "emoji", "emoji": "✅"}]
             )
+            await context.bot.delete_message(
+            chat_id=chat_id,
+            message_id=message.message_id
+             )
     except Exception as e:
             logger.error(f"Error setting reaction: {e}")
             # Consider notifying the user about the error if necessary
@@ -239,6 +238,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             parse_mode=constants.ParseMode.MARKDOWN,
             reply_to_message_id=responding_msg.message_id
         )
+        
 
 async def get_image_url(message) -> str:
     """Extract image URL from message"""
