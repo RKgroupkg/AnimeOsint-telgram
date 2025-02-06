@@ -1,5 +1,6 @@
 import os
 import logging
+import traceback
 from datetime import datetime
 from functools import partial
 import httpx
@@ -301,11 +302,41 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
 # Add before main()
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"Exception while handling an update: {context.error}")
-    if update and update.effective_message:
-        await update.effective_message.reply_text("Sorry, something went wrong. Please try again later.")
 
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle errors during bot execution."""
+
+    # Get the traceback information
+    tb = traceback.format_exc()
+
+    # Log the error with traceback
+    logger.error(f"Exception while handling an update:\n{tb}")
+
+    # Get the update details
+    update_str = str(update)
+
+    # Get the function name where the error occurred
+    function_name = "Unknown"
+    try:
+        # Extract function name from traceback (may not always be reliable)
+        function_name = tb.split("File ")[-1].split(", line ")[0].split("/")[-1]
+    except:
+        pass
+
+    # Construct the error message
+    error_message = (
+        "Oops! Something went wrong. Please try again later.\n\n"
+        f"*Error Details:*\n"
+        f"- Function: `{function_name}`\n"
+        f"- Update: `{update_str}`\n"
+        f"- Traceback: ```{tb}```"
+    )
+
+    # Reply to the user with the error message
+    if update and update.effective_message:
+        await update.effective_message.reply_text(
+            error_message, parse_mode=constants.ParseMode.MARKDOWN
+        )
 def main() -> None:
     """Start the bot"""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
