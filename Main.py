@@ -242,7 +242,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Send loading animation
         loading_message = await message.reply_animation(
-            animation="https://i.gifer.com/ZZ5H.gif",  # Replace with a reliable URL
+            animation="https://giffiles.alphacoders.com/121/12113.gif",  # Replace with a reliable URL
             caption="🔍 Analyzing your image..."
         )
         
