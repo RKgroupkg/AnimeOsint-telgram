@@ -5,6 +5,8 @@ from functools import partial
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+from telegram.error import TelegramError
+
 from keep_alive import keep_alive
 # Configure logging
 logging.basicConfig(
@@ -27,7 +29,7 @@ def get_main_keyboard():
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📺 Channel", url="https://t.me/Rkgroup_Bot"),
-            InlineKeyboardButton("💬 Support", url="https://t.me/Rkgroup_helpbot")
+            InlineKeyboardButton("💬 Support", url="https://t.me/Rkgroup_helpbot?start=start")
         ],
         [
             InlineKeyboardButton("🎯 How to Use", callback_data="how_to_use"),
@@ -232,15 +234,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def get_image_url(message) -> str:
     """Extract image URL from message"""
-    if message.photo:
-        return (await message.photo[-1].get_file()).file_url
-    if message.animation:
-        return (await message.animation.get_file()).file_url
-    if message.video and message.video.thumbnail:
-        return (await message.video.thumbnail.get_file()).file_url
-    if message.document and message.document.thumbnail:
-        return (await message.document.thumbnail.get_file()).file_url
-    return ""
+    try:
+        if message.photo:
+            file = await message.photo[-1].get_file()
+            return file.file_path
+        if message.animation:
+            file = await message.animation.get_file()
+            return file.file_path
+        if message.video and message.video.thumbnail:
+            file = await message.video.thumbnail.get_file()
+            return file.file_path
+        if message.document and message.document.thumbnail:
+            file = await message.document.thumbnail.get_file()
+            return file.file_path
+        return ""
+    except Exception as e:
+        logger.error(f"Error getting image URL: {e}")
+        return ""
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command"""
@@ -290,6 +300,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             reply_markup=get_help_keyboard()
         )
 
+# Add before main()
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(f"Exception while handling an update: {context.error}")
+    if update and update.effective_message:
+        await update.effective_message.reply_text("Sorry, something went wrong. Please try again later.")
+
 def main() -> None:
     """Start the bot"""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -303,6 +319,8 @@ def main() -> None:
         filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.IMAGE,
         handle_message
     ))
+    # Add in main() before application.run_polling()
+    application.add_error_handler(error_handler)
 
     # Start polling
     application.run_polling(allowed_updates=Update.ALL_TYPES)
