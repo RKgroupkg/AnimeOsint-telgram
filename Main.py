@@ -196,20 +196,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Show searching reaction
     await context.bot.send_chat_action(chat.id, "typing")
+    reaction = [{"type": "emoji", "emoji": "🔍"}]
+    emoji = reaction[0]["emoji"]  # Extract the emoji from the dictionary
     await context.bot.set_message_reaction(
-        chat_id=chat.id,
-        message_id=message.message_id,
-        reaction=[{"type": "emoji", "emoji": "🔍"}]
-    )
+     chat_id=chat.id,
+     message_id=message.message_id,
+     reaction=[{"type": "emoji", "emoji": emoji}]  # Pass the emoji string
+ )
     
     result = await submit_search(image_url, opts)
     
     # Update reaction based on result
-    await context.bot.set_message_reaction(
-        chat_id=chat.id,
-        message_id=message.message_id,
-        reaction=[{"type": "emoji", "emoji": "✅"}]
-    )
+    try:
+            await context.bot.set_message_reaction(
+                chat_id=chat.id,
+                message_id=message.message_id,
+                reaction=[{"type": "emoji", "emoji": "✅"}]
+            )
+    except Exception as e:
+            logger.error(f"Error setting reaction: {e}")
+            # Consider notifying the user about the error if necessary
+
     
     if result.get("is_adult"):
         await message.reply_text(
