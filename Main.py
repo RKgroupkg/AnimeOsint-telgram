@@ -5,6 +5,7 @@ from functools import partial
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from keep_alive import keep_alive
 
 # Configure logging
 logging.basicConfig(
@@ -204,4 +205,5 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
+    keep_alive()
     main()
