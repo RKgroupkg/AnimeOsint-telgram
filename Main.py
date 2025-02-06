@@ -84,7 +84,7 @@ A powerful bot that helps you find anime sources using screenshot recognition te
 *Credits:*
 • Powered by trace.moe
 • Data from AniList
-• Made with ❤️ by @Rkgroup_Bot
+• Made with ❤️ by @Rkgroup\_Bot
 
 Version: 2.0"""
 
