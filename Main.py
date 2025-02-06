@@ -3,10 +3,9 @@ import logging
 from datetime import datetime
 from functools import partial
 import httpx
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, constants
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from keep_alive import keep_alive
-
 # Configure logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -22,6 +21,69 @@ ANILIST_API_URL = os.getenv("ANILIST_API_URL", "https://graphql.anilist.co/")
 # Constants
 TELEGRAM_API = "https://api.telegram.org/bot"
 TRACE_MOE_API = "https://api.trace.moe/search"
+
+# Custom keyboard layouts
+def get_main_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📺 Channel", url="https://t.me/Rkgroup_Bot"),
+            InlineKeyboardButton("💬 Support", url="https://t.me/Rkgroup_helpbot")
+        ],
+        [
+            InlineKeyboardButton("🎯 How to Use", callback_data="how_to_use"),
+            InlineKeyboardButton("ℹ️ About", callback_data="about")
+        ]
+    ])
+
+def get_help_keyboard():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu")
+        ]
+    ])
+
+# Message templates
+START_MESSAGE = """🎌 *Welcome to Anime Screenshot Bot!* 🎌
+
+I can help you find the anime source from screenshots, GIFs, or video clips.
+
+*Features:*
+• Fast anime scene recognition
+• High accuracy results
+• Episode timestamp
+• Multiple title formats
+
+Send me an image or use these commands:
+/start - Start the bot
+/help - Show help
+/about - About the bot"""
+
+HELP_MESSAGE = """🎮 *How to Use the Bot* 🎮
+
+1. Send or forward an anime screenshot
+2. Wait for the analysis
+3. Get detailed results including:
+   • Anime titles
+   • Episode timestamp
+   • Scene preview
+   • Similarity score
+
+*Special Options:*
+Add these in caption:
+• `nocrop` - Disable border cropping
+• `mute` - Mute preview video
+• `skip` - Skip video preview"""
+
+ABOUT_MESSAGE = """🤖 *About Anime Screenshot Bot* 🤖
+
+A powerful bot that helps you find anime sources using screenshot recognition technology.
+
+*Credits:*
+• Powered by trace.moe
+• Data from AniList
+• Made with ❤️ by @Rkgroup_Bot
+
+Version: 2.0"""
 
 async def format_time(seconds: float) -> str:
     """Format seconds into HH:MM:SS"""
@@ -45,6 +107,13 @@ async def get_anilist_info(anilist_id: int) -> dict:
             }
             synonyms
             isAdult
+            coverImage {
+                large
+            }
+            status
+            episodes
+            duration
+            genres
         }
     }
     """
@@ -72,7 +141,7 @@ async def submit_search(image_url: str, opts: dict) -> dict:
         data = response.json()
         
         if response.status_code != 200 or not data.get("result"):
-            return {"text": "`API error, please try again later.`"}
+            return {"text": "❌ *API error, please try again later.*"}
         
         result = data["result"][0]
         anilist_info = await get_anilist_info(result["anilist"])
@@ -85,10 +154,15 @@ async def submit_search(image_url: str, opts: dict) -> dict:
         unique_titles = []
         [unique_titles.append(t) for t in titles if t not in unique_titles]
         
-        text = "\n".join([f"`{t}`" for t in unique_titles]) + "\n"
-        text += f"`{result['filename'].replace('`', '``')}`\n"
-        text += f"`{await format_time(result['from'])}`\n"
-        text += f"`{result['similarity'] * 100:.1f}% similarity`"
+        genres = anilist_info.get("genres", [])
+        genres_text = "` • `".join(genres[:3]) if genres else "N/A"
+        
+        text = "🎯 *Anime Found!*\n\n"
+        text += "*Titles:*\n" + "\n".join([f"• `{t}`" for t in unique_titles]) + "\n\n"
+        text += f"*Episode:* `{result['episode'] or 'Unknown'}`\n"
+        text += f"*Timestamp:* `{await format_time(result['from'])}`\n"
+        text += f"*Similarity:* `{result['similarity'] * 100:.1f}%`\n\n"
+        text += f"*Genres:* `{genres_text}`"
         
         return {
             "text": text,
@@ -102,10 +176,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = update.effective_user
     chat = update.effective_chat
     
-    # Check if message is a reply
     responding_msg = message.reply_to_message or message
     
-    # Get search options
     opts = {
         "no_crop": "nocrop" in (message.caption or "").lower(),
         "mute": "mute" in (message.caption or "").lower(),
@@ -113,49 +185,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "from_id": user.id
     }
     
-    # Try to get image URL
     image_url = await get_image_url(responding_msg)
     
     if not image_url:
         await send_help_message(message, chat.id)
         return
     
+    # Show searching reaction
+    await context.bot.send_chat_action(chat.id, "typing")
     await context.bot.set_message_reaction(
         chat_id=chat.id,
         message_id=message.message_id,
-        reaction=[{"type": "emoji", "emoji": "👌"}]
+        reaction=[{"type": "emoji", "emoji": "🔍"}]
     )
     
-    # Send typing action
-    await context.bot.send_chat_action(chat.id, "typing")
-    
-    # Submit search
     result = await submit_search(image_url, opts)
     
+    # Update reaction based on result
     await context.bot.set_message_reaction(
         chat_id=chat.id,
         message_id=message.message_id,
-        reaction=[{"type": "emoji", "emoji": "👍"}]
+        reaction=[{"type": "emoji", "emoji": "✅"}]
     )
     
-    # Handle adult content
     if result.get("is_adult"):
-        await message.reply_text("Adult content detected. Please contact me privately.")
+        await message.reply_text(
+            "🔞 *Adult content detected.* Please contact me privately.",
+            parse_mode=constants.ParseMode.MARKDOWN
+        )
         return
     
-    # Send results
     if result.get("video") and not opts.get("skip"):
         video_url = f"{result['video']}&mute" if opts.get("mute") else result['video']
         await message.reply_video(
             video=video_url,
             caption=result["text"],
-            parse_mode="Markdown",
+            parse_mode=constants.ParseMode.MARKDOWN,
             reply_to_message_id=responding_msg.message_id
         )
     else:
         await message.reply_text(
             result["text"],
-            parse_mode="Markdown",
+            parse_mode=constants.ParseMode.MARKDOWN,
             reply_to_message_id=responding_msg.message_id
         )
 
@@ -171,31 +242,63 @@ async def get_image_url(message) -> str:
         return (await message.document.thumbnail.get_file()).file_url
     return ""
 
-async def send_help_message(message, chat_id):
-    """Send help message with inline buttons"""
-    keyboard = [
-        [
-            InlineKeyboardButton("Channel", url="https://t.me/Rkgroup_Bot"),
-            InlineKeyboardButton("Support", url="https://t.me/Rkgroup_helpbot?start=start")
-        ]
-    ]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await message.reply_text(
-        "You can send/forward anime screenshots to me.",
-        reply_markup=reply_markup
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /start command"""
+    await update.message.reply_text(
+        START_MESSAGE,
+        parse_mode=constants.ParseMode.MARKDOWN,
+        reply_markup=get_main_keyboard()
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command"""
-    await send_help_message(update.message, update.effective_chat.id)
+    await update.message.reply_text(
+        HELP_MESSAGE,
+        parse_mode=constants.ParseMode.MARKDOWN,
+        reply_markup=get_help_keyboard()
+    )
+
+async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /about command"""
+    await update.message.reply_text(
+        ABOUT_MESSAGE,
+        parse_mode=constants.ParseMode.MARKDOWN,
+        reply_markup=get_help_keyboard()
+    )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle button callbacks"""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "main_menu":
+        await query.message.edit_text(
+            START_MESSAGE,
+            parse_mode=constants.ParseMode.MARKDOWN,
+            reply_markup=get_main_keyboard()
+        )
+    elif query.data == "how_to_use":
+        await query.message.edit_text(
+            HELP_MESSAGE,
+            parse_mode=constants.ParseMode.MARKDOWN,
+            reply_markup=get_help_keyboard()
+        )
+    elif query.data == "about":
+        await query.message.edit_text(
+            ABOUT_MESSAGE,
+            parse_mode=constants.ParseMode.MARKDOWN,
+            reply_markup=get_help_keyboard()
+        )
 
 def main() -> None:
     """Start the bot"""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Add handlers
+    application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("about", about_command))
+    application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(
         filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.IMAGE,
         handle_message
